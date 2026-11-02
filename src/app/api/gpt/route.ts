@@ -1,26 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-function generateDemoGPTResponse(prompt: string): string {
-  const p = prompt.trim();
-  return `### OpenAI GPT-4 Vision & Analysis
-
-Regarding **"${p}"**:
-
-1. **Core Concept**: Here is a structured approach from GPT's perspective.
-2. **Key Insights**:
-   - **Strategic Focus**: Prioritize core execution and scalable design patterns.
-   - **Implementation**: Maintain modular architecture and clean component structures.
-
-3. **Practical Code Example**:
-\`\`\`typescript
-// Demonstration pattern
-export async function handleQuery(query: string) {
-  return { status: "success", topic: query, model: "GPT-4" };
-}
-\`\`\`
-
-> *Tip*: Combine rapid iteration with continuous feedback loops for optimal results.`;
-}
+import { generateSmartGPTResponse } from "@/lib/knowledge-engine";
 
 export async function POST(req: NextRequest) {
   try {
@@ -34,53 +13,89 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const keyToUse = apiKey || process.env.OPENAI_API_KEY;
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    const directKey = apiKey || process.env.OPENAI_API_KEY;
 
-    if (keyToUse && !keyToUse.includes('your_openai_key')) {
+    // 1. Try OpenRouter with gpt-4o-mini if available
+    if (openRouterKey && !openRouterKey.includes('your_')) {
       try {
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${keyToUse}`,
+            "Authorization": `Bearer ${openRouterKey}`,
           },
           body: JSON.stringify({
-            model: "gpt-3.5-turbo",
+            model: "openai/gpt-4o-mini",
             messages: [
               {
                 role: "system",
-                content: "You are a helpful assistant. Provide responses in markdown format when appropriate. Use proper markdown syntax for headers, lists, code blocks, links, and other formatting to make your responses well-structured and readable."
+                content: "You are a helpful assistant. Provide responses in clean markdown format."
               },
-              {
-                role: "user",
-                content: content
-              }
+              { role: "user", content }
             ],
-            max_tokens: 1000,
+            max_tokens: 350,
             temperature: 0.7,
           }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          const result = data.choices[0]?.message?.content;
+          const result = data.choices?.[0]?.message?.content;
           if (result) {
             return NextResponse.json({ result }, { status: 200 });
           }
         }
       } catch (err) {
-        console.error("OpenAI API fetch error:", err);
+        console.error("OpenRouter GPT error:", err);
       }
     }
 
-    // Demo Mode Fallback for expired quota or rate-limited API keys
+    // 2. Try direct OpenAI API key if provided
+    if (directKey && !directKey.includes('your_openai_key')) {
+      try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${directKey}`,
+          },
+          body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: "You are a helpful assistant. Provide responses in clean markdown format."
+              },
+              { role: "user", content }
+            ],
+            max_tokens: 350,
+            temperature: 0.7,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const result = data.choices?.[0]?.message?.content;
+          if (result) {
+            return NextResponse.json({ result }, { status: 200 });
+          }
+        }
+      } catch (err) {
+        console.error("OpenAI direct API fetch error:", err);
+      }
+    }
+
+    // 3. Fallback to Smart Knowledge Engine
+    const smartResponse = await generateSmartGPTResponse(content);
     return NextResponse.json({
-      result: generateDemoGPTResponse(content)
+      result: smartResponse
     }, { status: 200 });
 
-  } catch (err: unknown) {
+  } catch {
+    const fallback = await generateSmartGPTResponse("Query");
     return NextResponse.json(
-      { result: generateDemoGPTResponse("Query") },
+      { result: fallback },
       { status: 200 }
     );
   }

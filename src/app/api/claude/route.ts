@@ -1,30 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { generateSmartClaudeResponse } from "@/lib/knowledge-engine";
 
 interface RequestBody {
   prompt: string;
   apiKey?: string;
-}
-
-function generateDemoClaudeResponse(prompt: string): string {
-  const p = prompt.trim();
-  return `### Anthropic Claude 3.5 Sonnet
-
-Here is a comprehensive breakdown of **"${p}"**:
-
-* **Analytical Perspective**: Breaking down the key dimensions of your request.
-* **Best Practices**:
-  - Maintain safety, clarity, and precision in execution.
-  - Ensure user experience and responsiveness remain primary design goals.
-
-\`\`\`json
-{
-  "analysis": "Completed",
-  "query": "${p.replace(/"/g, '\\"')}",
-  "confidence": 0.98
-}
-\`\`\`
-
-Summary: Focusing on scalable principles will deliver optimal outcomes for this use case.`;
 }
 
 export async function POST(req: NextRequest) {
@@ -32,20 +11,64 @@ export async function POST(req: NextRequest) {
     const body = await req.json() as RequestBody;
     const { prompt, apiKey } = body;
 
-    const keyToUse = apiKey || process.env.ANTHROPIC_API_KEY;
+    if (!prompt) {
+      return NextResponse.json(
+        { error: "Prompt is required in the request body." },
+        { status: 400 }
+      );
+    }
 
-    if (keyToUse && !keyToUse.includes('your_anthropic_key')) {
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    const directKey = apiKey || process.env.ANTHROPIC_API_KEY;
+
+    // 1. Try OpenRouter with anthropic/claude-haiku-4.5
+    if (openRouterKey && !openRouterKey.includes('your_')) {
+      try {
+        const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${openRouterKey}`,
+          },
+          body: JSON.stringify({
+            model: "anthropic/claude-haiku-4.5",
+            messages: [
+              {
+                role: "system",
+                content: "You are Claude, a helpful assistant. Provide structured, accurate, and concise responses in clean markdown syntax."
+              },
+              { role: "user", content: prompt }
+            ],
+            max_tokens: 180,
+            temperature: 0.7,
+          }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const result = data.choices?.[0]?.message?.content;
+          if (result) {
+            return NextResponse.json({ result }, { status: 200 });
+          }
+        }
+      } catch (err) {
+        console.error("OpenRouter Claude error:", err);
+      }
+    }
+
+    // 2. Try direct Anthropic key if available
+    if (directKey && !directKey.includes('your_anthropic_key')) {
       try {
         const response = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": keyToUse,
+            "x-api-key": directKey,
             "anthropic-version": "2023-06-01",
           },
           body: JSON.stringify({
-            model: "claude-3-sonnet-20240229",
-            max_tokens: 1024,
+            model: "claude-3-5-haiku-latest",
+            max_tokens: 350,
             messages: [
               {
                 role: "user",
@@ -62,18 +85,20 @@ export async function POST(req: NextRequest) {
           }
         }
       } catch (e) {
-        console.error("Claude API error:", e);
+        console.error("Direct Claude API error:", e);
       }
     }
 
-    // Demo Mode Fallback for expired quota or rate-limited API keys
+    // 3. Smart Knowledge Engine Fallback
+    const smartResponse = await generateSmartClaudeResponse(prompt);
     return NextResponse.json({
-      result: generateDemoClaudeResponse(prompt)
+      result: smartResponse
     }, { status: 200 });
 
-  } catch (err: unknown) {
+  } catch {
+    const fallback = await generateSmartClaudeResponse("Query");
     return NextResponse.json(
-      { result: generateDemoClaudeResponse("Query") },
+      { result: fallback },
       { status: 200 }
     );
   }

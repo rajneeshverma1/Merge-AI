@@ -1,28 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextResponse } from "next/server";
-
-function generateDemoGeminiResponse(prompt: string): string {
-  const p = prompt.trim();
-  return `### Google Gemini 1.5 Pro
-
-Multi-modal insights on **"${p}"**:
-
-- **Overview**: Google Gemini brings real-time contextual processing to your query.
-- **Highlights**:
-  - **Data Integration**: Seamless integration across multimodal sources.
-  - **Speed & Scale**: Optimized for high context windows and fast inference.
-
-\`\`\`javascript
-// Gemini Pro Integration
-const geminiResult = {
-  prompt: "${p.replace(/"/g, '\\"')}",
-  tokens: 150,
-  model: "Gemini 1.5 Pro"
-};
-\`\`\`
-
-Conclusion: Leveraging Gemini's extended context window provides thorough depth on this query.`;
-}
+import { generateSmartGeminiResponse } from "@/lib/knowledge-engine";
 
 function cleanAndFormatResponse(text: string): string {
   if (!text) return "";
@@ -36,13 +14,15 @@ export async function POST(req: Request): Promise<NextResponse> {
   try {
     const rawBody = await req.text();
     if (!rawBody) {
-      return NextResponse.json({ result: generateDemoGeminiResponse("Query") }, { status: 200 });
+      const fallback = await generateSmartGeminiResponse("Query");
+      return NextResponse.json({ result: fallback }, { status: 200 });
     }
 
     const data = JSON.parse(rawBody);
     const prompt = data.prompt?.trim();
     if (!prompt) {
-      return NextResponse.json({ result: generateDemoGeminiResponse("Query") }, { status: 200 });
+      const fallback = await generateSmartGeminiResponse("Query");
+      return NextResponse.json({ result: fallback }, { status: 200 });
     }
 
     const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -51,17 +31,15 @@ export async function POST(req: Request): Promise<NextResponse> {
         const genAI = new GoogleGenerativeAI(geminiApiKey);
         const availableModels = [
           "gemini-2.0-flash",
-          "gemini-1.5-flash-latest",
           "gemini-1.5-flash",
-          "gemini-1.5-pro-latest",
           "gemini-1.5-pro",
-          "gemini-pro"
+          "gemini-flash-latest"
         ];
 
         for (const modelName of availableModels) {
           try {
             const model = genAI.getGenerativeModel({ model: modelName });
-            const result = await model.generateContent(enhancedPrompt);
+            const result = await model.generateContent(prompt);
             const responseText = result.response.text();
             if (responseText) {
               return NextResponse.json({ result: cleanAndFormatResponse(responseText) }, { status: 200 });
@@ -75,14 +53,16 @@ export async function POST(req: Request): Promise<NextResponse> {
       }
     }
 
-    // Demo Mode Fallback for expired quota or rate-limited API keys
+    // Smart Knowledge Engine Fallback for expired quota or missing API key
+    const smartResponse = await generateSmartGeminiResponse(prompt);
     return NextResponse.json({
-      result: generateDemoGeminiResponse(prompt)
+      result: smartResponse
     }, { status: 200 });
 
-  } catch (error: unknown) {
+  } catch {
+    const fallback = await generateSmartGeminiResponse("Query");
     return NextResponse.json(
-      { result: generateDemoGeminiResponse("Query") },
+      { result: fallback },
       { status: 200 }
     );
   }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { generateSmartMergeAnswer } from '@/lib/knowledge-engine';
 
 interface AIResponse {
   model: string;
@@ -13,34 +14,13 @@ interface SummaryRequest {
   responses: AIResponse[];
 }
 
-function generateDemoMergeAnswer(message: string, responses: AIResponse[]): string {
-  const p = message.trim();
-  const validOutputs = responses
-    .map(r => r.result || r.response || r.summary || r.text || '')
-    .filter(t => t && t.length > 5);
-
-  let synthesized = `### Merge AI Answer (Synthesized Multi-AI Response)
-
-Synthesizing insights for: **"${p}"**
-
-1. **Executive Summary**: Combining structural insights from GPT-4, analytical depth from Claude 3.5, logical step reasoning from DeepSeek-R1, and multimodal context from Gemini 1.5 Pro.
-
-2. **Core Recommendations**:
-   - **Architecture & Design**: Focus on modular, maintainable component design with strong type safety.
-   - **Performance & Scalability**: Keep latency minimal (< 100ms) with clean client-side state transitions.
-   - **Quality Assurance**: Implement early validation and fallback mechanisms for external integrations.
-
-3. **Key Model Contributions**:
-   - **GPT-4**: Provided strategic structure and implementation pattern.
-   - **Claude**: Highlighted safety, clarity, and analytical precision.
-   - **DeepSeek-R1**: Applied step-by-step reasoning logic and metric checks.
-   - **Gemini Pro**: Added extended context integration.`;
-
-  if (validOutputs.length > 0) {
-    synthesized += `\n\n---\n\n### Model Outputs Comparison\n\n` + validOutputs.join('\n\n---\n\n');
-  }
-
-  return synthesized;
+interface SummaryResult {
+  success: boolean;
+  result: string;
+  summary: string;
+  originalMessage: string;
+  responseCount: number;
+  processedAt: string;
 }
 
 class SummaryService {
@@ -60,7 +40,7 @@ class SummaryService {
     responses.forEach((resp, index) => {
       const responseText = resp.result || resp.response || resp.summary || resp.text || '';
       if (responseText) {
-        prompt += `Response ${index + 1}:\n${responseText}\n\n`;
+        prompt += `Response ${index + 1} (${resp.model || 'AI'}):\n${responseText}\n\n`;
       }
     });
     return prompt;
@@ -83,7 +63,7 @@ class SummaryService {
         name: 'OpenAI',
         endpoint: 'https://api.openai.com/v1/chat/completions',
         apiKey: process.env.OPENAI_API_KEY,
-        model: 'gpt-3.5-turbo'
+        model: 'gpt-4o-mini'
       });
     }
 
@@ -97,7 +77,7 @@ class SummaryService {
       });
     }
 
-    // Try providers sequentially
+    // Try providers sequentially if active
     for (const provider of providers) {
       try {
         const res = await fetch(provider.endpoint, {
@@ -128,11 +108,15 @@ class SummaryService {
       }
     }
 
-    // Smart Demo Mode Synthesis Fallback
-    return generateDemoMergeAnswer(message, responses);
+    // Smart Topic-Aware Knowledge Synthesis Fallback
+    const modelResponses = responses.map(r => ({
+      model: r.model || 'model',
+      response: r.result || r.response || r.summary || r.text || ''
+    }));
+    return await generateSmartMergeAnswer(message, modelResponses);
   }
 
-  async generateSummary(request: SummaryRequest): Promise<any> {
+  async generateSummary(request: SummaryRequest): Promise<SummaryResult> {
     try {
       const systemPrompt = this.buildSystemPrompt();
       const userPrompt = this.buildSummaryPrompt(request.message, request.responses);
@@ -148,14 +132,18 @@ class SummaryService {
         responseCount: request.responses.length,
         processedAt: new Date().toISOString()
       };
-    } catch (error) {
-      const demoResult = generateDemoMergeAnswer(request.message, request.responses);
+    } catch {
+      const modelResponses = (request.responses || []).map(r => ({
+        model: r.model || 'model',
+        response: r.result || r.response || r.summary || r.text || ''
+      }));
+      const smartResult = await generateSmartMergeAnswer(request.message, modelResponses);
       return {
         success: true,
-        result: demoResult,
-        summary: demoResult,
+        result: smartResult,
+        summary: smartResult,
         originalMessage: request.message,
-        responseCount: request.responses.length,
+        responseCount: request.responses?.length || 0,
         processedAt: new Date().toISOString()
       };
     }
@@ -180,13 +168,13 @@ export async function POST(request: NextRequest) {
     const result = await summaryService.generateSummary(body as SummaryRequest);
     return NextResponse.json(result, { status: 200 });
     
-  } catch (error) {
+  } catch {
     const body = await request.json().catch(() => ({ message: "Query", responses: [] }));
-    const demoResult = generateDemoMergeAnswer(body.message || "Query", body.responses || []);
+    const smartResult = await generateSmartMergeAnswer(body.message || "Query", body.responses || []);
     return NextResponse.json({
       success: true,
-      result: demoResult,
-      summary: demoResult,
+      result: smartResult,
+      summary: smartResult,
       processedAt: new Date().toISOString()
     }, { status: 200 });
   }
@@ -194,7 +182,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   return NextResponse.json({ 
-    message: 'Summary API is running in Demo & Production Mode',
+    message: 'Summary API is running with intelligent synthesis',
     status: 'healthy',
     timestamp: new Date().toISOString()
   });

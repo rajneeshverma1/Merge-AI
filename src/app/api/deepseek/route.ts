@@ -1,33 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { generateSmartDeepSeekResponse } from "@/lib/knowledge-engine";
 
 interface RequestBody {
   prompt: string;
-}
-
-function generateDemoDeepSeekResponse(prompt: string): string {
-  const p = prompt.trim();
-  return `### DeepSeek-R1 (Reasoning Model)
-
-<think>
-Analyzing prompt: "${p}"
-Step 1: Identify domain requirements.
-Step 2: Synthesize logical sequence.
-Step 3: Generate optimal response structure.
-</think>
-
-**Reasoned Solution for "${p}"**:
-
-1. **Architectural Logic**: Establish clear input-output mapping.
-2. **Performance Metrics**:
-   - Latency: < 100ms
-   - Throughput: High concurrency
-   - Reliability: 99.9% uptime
-
-\`\`\`python
-# DeepSeek Logical Pipeline
-def solve_problem(prompt: str) -> str:
-    return f"Processed '{prompt}' via DeepSeek-R1 reasoning engine"
-\`\`\``;
 }
 
 function cleanResponse(text: string): string {
@@ -42,13 +17,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const rawBody = await req.text();
     if (!rawBody) {
-      return NextResponse.json({ result: generateDemoDeepSeekResponse("Query") }, { status: 200 });
+      const fallback = await generateSmartDeepSeekResponse("Query");
+      return NextResponse.json({ result: fallback }, { status: 200 });
     }
 
     const data: RequestBody = JSON.parse(rawBody);
     const prompt = data.prompt?.trim();
     if (!prompt) {
-      return NextResponse.json({ result: generateDemoDeepSeekResponse("Query") }, { status: 200 });
+      const fallback = await generateSmartDeepSeekResponse("Query");
+      return NextResponse.json({ result: fallback }, { status: 200 });
     }
 
     const apiKey = process.env.DEEPSEEK_API_KEY || process.env.OPENROUTER_API_KEY;
@@ -79,7 +56,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
               },
               { role: "user", content: prompt },
             ],
-            max_tokens: 500,
+            max_tokens: 1000,
             temperature: 0.7,
           })
         });
@@ -96,14 +73,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // Demo Mode Fallback for expired quota or rate-limited API keys
+    // Smart Knowledge Engine Fallback for expired quota or rate-limited API keys
+    const smartResponse = await generateSmartDeepSeekResponse(prompt);
     return NextResponse.json({
-      result: generateDemoDeepSeekResponse(prompt)
+      result: smartResponse
     }, { status: 200 });
 
-  } catch (error: unknown) {
+  } catch {
+    const fallback = await generateSmartDeepSeekResponse("Query");
     return NextResponse.json(
-      { result: generateDemoDeepSeekResponse("Query") },
+      { result: fallback },
       { status: 200 }
     );
   }
