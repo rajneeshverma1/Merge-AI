@@ -1,3 +1,4 @@
+"use client";
 import { animate } from "framer-motion";
 import React, { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -15,11 +16,10 @@ const MarkdownRenderer = ({ content }: { content: string }) => (
       ul: ({ children }) => <ul className="list-disc ml-6 space-y-1 mb-4">{children}</ul>,
       ol: ({ children }) => <ol className="list-decimal ml-6 space-y-1 mb-4">{children}</ol>,
       li: ({ children }) => <li className="text-neutral-300 text-sm leading-relaxed">{children}</li>,
-      
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      code: ({ className, children }: any) => {
-        const isInline = !className || !className.includes('language-');
-        return isInline ? (
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
+      code: ({ inline, children }) => 
+        inline ? (
           <code className="bg-neutral-700 px-1 py-0.5 rounded text-xs text-neutral-200 font-mono">
             {children}
           </code>
@@ -27,8 +27,7 @@ const MarkdownRenderer = ({ content }: { content: string }) => (
           <code className="block bg-neutral-800 p-3 rounded-lg text-sm text-neutral-200 font-mono overflow-x-auto">
             {children}
           </code>
-        );
-      },
+        ),
       pre: ({ children }) => <div className="mb-4">{children}</div>,
       strong: ({ children }) => <strong className="font-semibold text-neutral-200">{children}</strong>,
       em: ({ children }) => <em className="italic text-neutral-200">{children}</em>,
@@ -53,74 +52,6 @@ const MarkdownRenderer = ({ content }: { content: string }) => (
   </ReactMarkdown>
 );
 
-const ApiKeyInput = ({ onApiKeySave }: { onApiKeySave: (apiKey: string) => void }) => {
-  const [apiKey, setApiKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-
-  const handleSave = () => {
-    if (apiKey.trim()) {
-      // Store in localStorage
-      localStorage.setItem('claude_api_key', apiKey.trim());
-      onApiKeySave(apiKey.trim());
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSave();
-    }
-  };
-
-  return (
-    <Card className="max-w-md">
-      <CardSkeletonContainer>
-        <div className="p-8 overflow-hidden h-full relative flex items-center justify-center">
-          <div className="flex flex-row flex-shrink-0 justify-center items-center gap-2">
-            <Container>
-              <ClaudeLogo className="h-8 w-8 rounded-full dark:text-white" />
-            </Container>
-          </div>
-        </div>
-      </CardSkeletonContainer>
-      
-      <CardTitle>Enter Your Claude API Key</CardTitle>
-      
-      <div className="space-y-3 mt-3">
-        <div className="relative">
-          <input
-            type={showKey ? "text" : "password"}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="sk-ant-api03-..."
-            className="w-full px-3 py-2 bg-neutral-800 border border-neutral-600 rounded-md text-neutral-200 text-sm focus:outline-none focus:border-blue-400 pr-10"
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey(!showKey)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-200 text-xs"
-          >
-            {showKey ? "Hide" : "Show"}
-          </button>
-        </div>
-        
-        <button
-          onClick={handleSave}
-          disabled={!apiKey.trim()}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-700 disabled:text-neutral-500 text-white text-sm py-2 px-4 rounded-md transition-colors"
-        >
-          Save API Key
-        </button>
-        
-        <div className="text-xs absolute top-0 text-neutral-400 space-y-1">
-          <p>🔒 Your API key is stored locally in your browser only.</p>
-  
-        </div>
-      </div>
-    </Card>
-  );
-};
-
 interface ClaudeProps {
   message: string;
   onResponseChange?: (response: string) => void;
@@ -131,70 +62,41 @@ export default function Claude({ message, onResponseChange }: ClaudeProps) {
   const [response, setResponse] = useState<string | null>(null);
   const [showMore, setShowMore] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
-  const [apiKey, setApiKey] = useState<string | null>(null);
-
-  // Check for existing API key on component mount
-  useEffect(() => {
-    const savedApiKey = localStorage.getItem('claude_api_key');
-    if (savedApiKey) {
-      setApiKey(savedApiKey);
-    }
-  }, []);
-
-  // Handle API key save
-  const handleApiKeySave = (newApiKey: string) => {
-    setApiKey(newApiKey);
-  };
-
-  // Handle clearing API key
-  const handleClearApiKey = () => {
-    localStorage.removeItem('claude_api_key');
-    setApiKey(null);
-    setResponse(null);
-  };
 
   useEffect(() => {
-    if (message.trim() && apiKey) {
+    if (message.trim()) {
       setLoading(true);
-      setResponse("");
-      setShowMore(false);
+      setResponse(""); // Clear previous response
+      setShowMore(false); // Reset show more when new message comes
       
       const fetchData = async () => {
         try {
           const result = await fetch('/api/claude', {
             method: 'POST',
-            body: JSON.stringify({ 
-              prompt: message,
-              apiKey: apiKey // Send API key from frontend
-            }),
+            body: JSON.stringify({ prompt: message }),
             headers: {
               'Content-Type': 'application/json',
             },
           });
-          
-          if (!result.ok) {
-            const errorData = await result.json();
-            throw new Error(errorData.error || 'Failed to get response');
-          }
-          
           const data = await result.json();
-          const responseText = data.content?.[0]?.text || data.result || 'No response received';
+          const responseText = data.content?.[0]?.text || data.result || data.error || "No response received";
           setResponse(responseText);
           // eslint-disable-next-line @typescript-eslint/no-unused-expressions
           onResponseChange && onResponseChange(responseText);
+          console.log("Claude response:", responseText);
         } catch (error) {
-          console.error('Error fetching response:', error);
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-          setResponse(`Error: ${errorMessage}`);
+          console.error('Error fetching Claude response:', error);
+          const errText = "Error connecting to Claude API";
+          setResponse(errText);
           // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-          onResponseChange && onResponseChange("");
+          onResponseChange && onResponseChange(errText);
         } finally {
           setLoading(false);
         }
       };
       fetchData();
     }
-  }, [message, apiKey, onResponseChange]);
+  }, [message]);
 
   const handleCopy = async () => {
     if (response) {
@@ -214,41 +116,6 @@ export default function Claude({ message, onResponseChange }: ClaudeProps) {
     return firstSentence.length > 100 ? text.substring(0, 100) + "..." : firstSentence + ".";
   };
 
-  const formatResponse = (text: string) => {
-    const paragraphs = text.split(/\n\n+/);
-    return paragraphs.map((paragraph, index) => {
-      if (paragraph.includes('\n-') || paragraph.includes('\n•') || /\n\d+\./.test(paragraph)) {
-        const lines = paragraph.split('\n');
-        const title = lines[0];
-        const items = lines.slice(1).filter(line => line.trim());
-        
-        return (
-          <div key={index} className="mb-4">
-            {title && <p className="font-medium mb-2 text-neutral-200">{title}</p>}
-            <ul className="space-y-1 ml-4">
-              {items.map((item, itemIndex) => (
-                <li key={itemIndex} className="text-neutral-300 text-sm leading-relaxed">
-                  {item.replace(/^[-•]\s*/, '').replace(/^\d+\.\s*/, '')}
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      } else {
-        return (
-          <div key={index} className="mb-4">
-            <MarkdownRenderer content={paragraph} />
-          </div>
-        );
-      }
-    });
-  };
-
-  // Show API key input if no API key is saved
-  if (!apiKey) {
-    return <ApiKeyInput onApiKeySave={handleApiKeySave} />;
-  }
-
   return (
     <Card className={showMore ? "max-w-2xl" : "max-w-md"}>
       {!showMore ? (
@@ -256,17 +123,7 @@ export default function Claude({ message, onResponseChange }: ClaudeProps) {
           <CardSkeletonContainer>
             <Skeleton />
           </CardSkeletonContainer>
-          <CardTitle>
-            <div className="flex items-center justify-between">
-              <span>Claude</span>
-              <button
-                onClick={handleClearApiKey}
-                className="text-xs text-red-400 hover:text-red-300 underline"
-              >
-                Change API Key
-              </button>
-            </div>
-          </CardTitle>
+          <CardTitle>Claude</CardTitle>
           <CardDescription>
             {loading ? (
               "Generating response..."
@@ -302,17 +159,11 @@ export default function Claude({ message, onResponseChange }: ClaudeProps) {
               >
                 Collapse
               </button>
-              <button
-                onClick={handleClearApiKey}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors px-2 py-1 rounded border border-red-600 hover:border-red-500"
-              >
-                Change Key
-              </button>
             </div>
           </div>
           <div className="max-h-96 overflow-y-auto pr-2 custom-scrollbar">
             <div className="space-y-3">
-              {response ? formatResponse(response) : "No response available"}
+              {response ? <MarkdownRenderer content={response} /> : "No response available"}
             </div>
           </div>
         </div>
@@ -378,7 +229,7 @@ const Skeleton = () => {
   useEffect(() => {
     animate(sequence, {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
+      //@ts-ignore
       repeat: Infinity,
       repeatDelay: 1,
     });

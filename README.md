@@ -17,7 +17,6 @@ This platform allows users to input queries and receive responses from multiple 
 ---
 
 ## Tech Stack
-
 ### Frontend
 - **Framework**: Next.js
 - **Styling**: Tailwind CSS

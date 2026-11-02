@@ -18,13 +18,13 @@ export default function Home() {
   
   const user = { id: 'user_local', name: 'Local User' };
 
-  // Auto-trigger Mistral API when both responses are received
+  // Auto-trigger Mistral API when models respond
   useEffect(() => {
-    const hasDeepSeek = responses.some(r => r.model === 'deepseek');
-    const hasGemini = responses.some(r => r.model === 'gemini');
-    
-    if (hasDeepSeek && hasGemini && !isSummarizing && !mistralSummary) {
-      handleSummarizeWithMistral();
+    if (responses.length >= 2 && !isSummarizing && !mistralSummary) {
+      const timer = setTimeout(() => {
+        handleSummarizeWithMistral();
+      }, 800);
+      return () => clearTimeout(timer);
     }
   }, [responses, isSummarizing, mistralSummary]);
 

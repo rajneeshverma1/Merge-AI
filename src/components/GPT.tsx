@@ -52,73 +52,6 @@ const MarkdownRenderer = ({ content }: { content: string }) => (
   </ReactMarkdown>
 );
 
-const ApiKeyInput = ({ onApiKeySave }: { onApiKeySave: (apiKey: string) => void }) => {
-  const [apiKey, setApiKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-
-  const handleSave = () => {
-    if (apiKey.trim()) {
-      // Note: In a real app, you'd use localStorage here
-      localStorage.setItem('openai_api_key', apiKey.trim());
-      onApiKeySave(apiKey.trim());
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSave();
-    }
-  };
-
-  return (
-    <Card className="max-w-md">
-      <CardSkeletonContainer>
-        <div className="p-8 overflow-hidden h-full relative flex items-center justify-center">
-          <div className="flex flex-row flex-shrink-0 justify-center items-center gap-2">
-            <Container>
-              <OpenAILogo className="h-8 w-8 dark:text-white" />
-            </Container>
-          </div>
-        </div>
-      </CardSkeletonContainer>
-      
-      <CardTitle>Enter Your OpenAI API Key</CardTitle>
-      
-      <div className="space-y-3 mt-3">
-        <div className="relative">
-          <input
-            type={showKey ? "text" : "password"}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="sk-..."
-            className="w-full px-3 py-2 bg-neutral-800 border border-neutral-600 rounded-md text-neutral-200 text-sm focus:outline-none focus:border-blue-400 pr-10"
-          />
-          <button
-            type="button"
-            onClick={() => setShowKey(!showKey)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-200 text-xs"
-          >
-            {showKey ? "Hide" : "Show"}
-          </button>
-        </div>
-        
-        <button
-          onClick={handleSave}
-          disabled={!apiKey.trim()}
-          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-neutral-700 disabled:text-neutral-500 text-white text-sm py-2 px-4 rounded-md transition-colors"
-        >
-          Save API Key
-        </button>
-        
-        <div className="text-xs absolute top-0 text-neutral-400 space-y-1">
-          <p>🔒 Your API key is stored locally in your browser only.</p>
-        </div>
-      </div>
-    </Card>
-  );
-};
-
 interface GPTProps {
   message: string;
   onResponseChange?: (response: string) => void;
@@ -129,71 +62,41 @@ export default function GPT({ message, onResponseChange }: GPTProps) {
   const [response, setResponse] = useState<string | null>(null);
   const [showMore, setShowMore] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
-  const [apiKey, setApiKey] = useState<string | null>(null);
-
-  // Check for existing API key on component mount
-  useEffect(() => {
-    // Note: In a real app, you'd use localStorage here
-    const savedApiKey = localStorage.getItem('openai_api_key');
-    if (savedApiKey) {
-      setApiKey(savedApiKey);
-    }
-  }, []);
-
-  // Handle API key save
-  const handleApiKeySave = (newApiKey: string) => {
-    setApiKey(newApiKey);
-  };
-
-  // Handle clearing API key
-  const handleClearApiKey = () => {
-    localStorage.removeItem('openai_api_key');
-    setApiKey(null);
-    setResponse(null);
-  };
 
   useEffect(() => {
-    if (message.trim() && apiKey) {
+    if (message.trim()) {
       setLoading(true);
-      setResponse("");
-      setShowMore(false);
+      setResponse(""); // Clear previous response
+      setShowMore(false); // Reset show more when new message comes
       
       const fetchData = async () => {
         try {
           const result = await fetch('/api/gpt', {
             method: 'POST',
-            body: JSON.stringify({ 
-              content: message,
-              apiKey: apiKey // Send API key from frontend
-            }),
+            body: JSON.stringify({ content: message }),
             headers: {
               'Content-Type': 'application/json',
             },
           });
-          
-          if (!result.ok) {
-            const errorData = await result.json();
-            throw new Error(errorData.error || 'Failed to get response');
-          }
-          
           const data = await result.json();
-          const responseText = data.result || 'No response received';
+          const responseText = data.result || data.error || "No response received";
           setResponse(responseText);
           // eslint-disable-next-line @typescript-eslint/no-unused-expressions
           onResponseChange && onResponseChange(responseText);
+          console.log("GPT response:", responseText);
         } catch (error) {
-          console.error('Error fetching response:', error);
-          const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-          setResponse(`Error: ${errorMessage}`);
+          console.error('Error fetching GPT response:', error);
+          const errText = "Error connecting to ChatGPT API";
+          setResponse(errText);
           // eslint-disable-next-line @typescript-eslint/no-unused-expressions
-          onResponseChange && onResponseChange("");
+          onResponseChange && onResponseChange(errText);
         } finally {
           setLoading(false);
         }
       };
       fetchData();
     }
-  }, [message, apiKey, onResponseChange]);
+  }, [message]);
 
   const handleCopy = async () => {
     if (response) {
@@ -213,41 +116,6 @@ export default function GPT({ message, onResponseChange }: GPTProps) {
     return firstSentence.length > 100 ? text.substring(0, 100) + "..." : firstSentence + ".";
   };
 
-  const formatResponse = (text: string) => {
-    const paragraphs = text.split(/\n\n+/);
-    return paragraphs.map((paragraph, index) => {
-      if (paragraph.includes('\n-') || paragraph.includes('\n•') || /\n\d+\./.test(paragraph)) {
-        const lines = paragraph.split('\n');
-        const title = lines[0];
-        const items = lines.slice(1).filter(line => line.trim());
-        
-        return (
-          <div key={index} className="mb-4">
-            {title && <p className="font-medium mb-2 text-neutral-200">{title}</p>}
-            <ul className="space-y-1 ml-4">
-              {items.map((item, itemIndex) => (
-                <li key={itemIndex} className="text-neutral-300 text-sm leading-relaxed">
-                  {item.replace(/^[-•]\s*/, '').replace(/^\d+\.\s*/, '')}
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      } else {
-        return (
-          <div key={index} className="mb-4">
-            <MarkdownRenderer content={paragraph} />
-          </div>
-        );
-      }
-    });
-  };
-
-  // Show API key input if no API key is saved
-  if (!apiKey) {
-    return <ApiKeyInput onApiKeySave={handleApiKeySave} />;
-  }
-
   return (
     <Card className={showMore ? "max-w-2xl" : "max-w-md"}>
       {!showMore ? (
@@ -255,17 +123,7 @@ export default function GPT({ message, onResponseChange }: GPTProps) {
           <CardSkeletonContainer>
             <Skeleton />
           </CardSkeletonContainer>
-          <CardTitle>
-            <div className="flex items-center justify-between">
-              <span>ChatGPT</span>
-              <button
-                onClick={handleClearApiKey}
-                className="text-xs text-red-400 hover:text-red-300 underline"
-              >
-                Change API Key
-              </button>
-            </div>
-          </CardTitle>
+          <CardTitle>ChatGPT</CardTitle>
           <CardDescription>
             {loading ? (
               "Generating response..."
@@ -301,17 +159,11 @@ export default function GPT({ message, onResponseChange }: GPTProps) {
               >
                 Collapse
               </button>
-              <button
-                onClick={handleClearApiKey}
-                className="text-xs text-red-400 hover:text-red-300 transition-colors px-2 py-1 rounded border border-red-600 hover:border-red-500"
-              >
-                Change Key
-              </button>
             </div>
           </div>
           <div className="max-h-96 overflow-y-auto pr-2 custom-scrollbar">
             <div className="space-y-3">
-              {response ? formatResponse(response) : "No response available"}
+              {response ? <MarkdownRenderer content={response} /> : "No response available"}
             </div>
           </div>
         </div>
@@ -498,16 +350,12 @@ export const CardDescription = ({
 export const OpenAILogo = ({ className }: { className?: string }) => {
   return (
     <svg
-      className={className}
-      width="28"
-      viewBox="0 0 28 28"
-      fill="none"
       xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={cn("w-6 h-6", className)}
     >
-      <path
-        d="M26.153 11.46a6.888 6.888 0 0 0-.608-5.73 7.117 7.117 0 0 0-3.29-2.93 7.238 7.238 0 0 0-4.41-.454 7.065 7.065 0 0 0-2.41-1.742A7.15 7.15 0 0 0 12.514 0a7.216 7.216 0 0 0-4.217 1.346 7.061 7.061 0 0 0-2.603 3.539 7.12 7.12 0 0 0-2.734 1.188A7.012 7.012 0 0 0 .966 8.268a6.979 6.979 0 0 0 .88 8.273 6.89 6.89 0 0 0 .607 5.729 7.117 7.117 0 0 0 3.29 2.93 7.238 7.238 0 0 0 4.41.454 7.061 7.061 0 0 0 2.409 1.742c.92.404 1.916.61 2.923.604a7.215 7.215 0 0 0 4.22-1.345 7.06 7.06 0 0 0 2.605-3.543 7.116 7.116 0 0 0 2.734-1.187 7.01 7.01 0 0 0 1.993-2.196 6.978 6.978 0 0 0-.884-8.27Zm-10.61 14.71c-1.412 0-2.505-.428-3.46-1.215.043-.023.119-.064.168-.094l5.65-3.22a.911.911 0 0 0 .464-.793v-7.86l2.389 1.36a.087.087 0 0 1 .046.065v6.508c0 2.952-2.491 5.248-5.257 5.248ZM4.062 21.354a5.17 5.17 0 0 1-.635-3.516c.042.025.115.07.168.1l5.65 3.22a.928.928 0 0 0 .928 0l6.898-3.93v2.72a.083.083 0 0 1-.034.072l-5.711 3.255a5.386 5.386 0 0 1-4.035.522 5.315 5.315 0 0 1-3.23-2.443ZM2.573 9.184a5.283 5.283 0 0 1 2.768-2.301V13.515a.895.895 0 0 0 .464.793l6.897 3.93-2.388 1.36a.087.087 0 0 1-.08.008L4.52 16.349a5.262 5.262 0 0 1-2.475-3.185 5.192 5.192 0 0 1 .527-3.98Zm19.623 4.506-6.898-3.93 2.388-1.36a.087.087 0 0 1 .08-.008l5.713 3.255a5.28 5.28 0 0 1 2.054 2.118 5.19 5.19 0 0 1-.488 5.608 5.314 5.314 0 0 1-2.39 1.742v-6.633a.896.896 0 0 0-.459-.792Zm2.377-3.533a7.973 7.973 0 0 0-.168-.099l-5.65-3.22a.93.93 0 0 0-.928 0l-6.898 3.93V8.046a.083.083 0 0 1 .034-.072l5.712-3.251a5.375 5.375 0 0 1 5.698.241 5.262 5.262 0 0 1 1.865 2.28c.39.92.506 1.93.335 2.913ZM9.631 15.009l-2.39-1.36a.083.083 0 0 1-.046-.065V7.075c.001-.997.29-1.973.832-2.814a5.297 5.297 0 0 1 2.231-1.935 5.382 5.382 0 0 1 5.659.72 4.89 4.89 0 0 0-.168.093l-5.65 3.22a.913.913 0 0 0-.465.793l-.003 7.857Zm1.297-2.76L14 10.5l3.072 1.75v3.5L14 17.499l-3.072-1.75v-3.5Z"
-        fill="currentColor"
-      ></path>
+      <path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1683a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4947zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1683a.0757.0757 0 0 1-.071 0l-4.8303-2.7866A4.504 4.504 0 0 1 2.3408 7.8956zm16.0993 3.8558L12.5973 8.3829l2.02-1.1636a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4947 4.4947 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.4022-.5862zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1635a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.6069 1.4997-2.602-1.4997z"/>
     </svg>
   );
 };

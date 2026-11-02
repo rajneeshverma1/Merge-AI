@@ -120,38 +120,6 @@ export default function DeepSeek({ message, onResponseChange }: DeepSeekProps) {
     return firstSentence.length > 100 ? text.substring(0, 100) + "..." : firstSentence + ".";
   };
 
-  const formatResponse = (text: string) => {
-    // Split by double newlines for paragraphs
-    const paragraphs = text.split(/\n\n+/);
-    return paragraphs.map((paragraph, index) => {
-      // Check if paragraph contains bullet points or numbered lists
-      if (paragraph.includes('\n-') || paragraph.includes('\n•') || /\n\d+\./.test(paragraph)) {
-        const lines = paragraph.split('\n');
-        const title = lines[0];
-        const items = lines.slice(1).filter(line => line.trim());
-        
-        return (
-          <div key={index} className="mb-4">
-            {title && <p className="font-medium mb-2 text-neutral-200">{title}</p>}
-            <ul className="space-y-1 ml-4">
-              {items.map((item, itemIndex) => (
-                <li key={itemIndex} className="text-neutral-300 text-sm leading-relaxed">
-                  {item.replace(/^[-•]\s*/, '').replace(/^\d+\.\s*/, '')}
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      } else {
-        return (
-          <p key={index} className="mb-4 text-neutral-300 text-sm leading-relaxed">
-            <MarkdownRenderer content={response || ""} />
-          </p>
-        );
-      }
-    });
-  };
-
   return (
     <Card className={showMore ? "max-w-2xl" : "max-w-md"}>
       {!showMore ? (
